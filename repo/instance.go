@@ -55,6 +55,17 @@ func GetInstanceRepo() *InstanceRepo {
 	return instanceRepo
 }
 
+func (o *InstanceRepo) Create(mdl *Instance) error {
+
+	err := o.BaseRepo.Create(mdl).Error
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (o *InstanceRepo) GetById(instanceId string) *Instance {
 
 	ret := &Instance{}
@@ -69,4 +80,32 @@ func (o *InstanceRepo) GetById(instanceId string) *Instance {
 func (o *InstanceRepo) SetStepId(instanceId, stepIs string) {
 
 	o.Exec("update ")
+}
+
+func (o *InstanceRepo) Search(flowId, stepId string, pageNo, pageLength int) ([]*Instance, int64) {
+
+	ret := []*Instance{}
+
+	tx := o.Model(Instance{})
+
+	if flowId != "" {
+
+		tx = tx.Where("flow_id = ?", flowId)
+	}
+
+	if stepId != "" {
+
+		tx = tx.Where("step_id = ?", flowId)
+	}
+
+	if pageLength > 0 {
+		tx = tx.Offset((pageNo - 1) * pageLength).Limit(pageLength)
+	}
+
+	var total int64 = 0
+
+	tx.Count(&total)
+	tx.Find(ret)
+
+	return ret, total
 }

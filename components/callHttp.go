@@ -1,13 +1,12 @@
 package components
 
+import "github.com/adlindo/unaflow/engine"
+
 type CallHTTP struct {
+	BaseComponent
 }
 
-func (o *CallHTTP) IsAutoExecute() bool {
-	return true
-}
+func (o *CallHTTP) Execute(data map[string]interface{}, flow *engine.Flow, instance *engine.FlowInstance) error {
 
-func (o *CallHTTP) Execute() (string, error) {
-
-	return "", nil
+	return nil
 }

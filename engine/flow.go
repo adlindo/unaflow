@@ -3,13 +3,15 @@ package engine
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 
+	"github.com/adlindo/unaflow/dto"
 	"github.com/adlindo/unaflow/repo"
+	"github.com/jinzhu/copier"
 )
 
 type Flow struct {
 	Id    string
+	Code  string
 	Steps map[string]*Step
 }
 
@@ -51,41 +53,51 @@ func (o *Flow) Init(mdl *repo.Flow) error {
 
 	for _, stepItem := range steps {
 
-		fmt.Println("===>>>33333", stepItem)
-
 		stepMap := stepItem.(map[string]interface{})
 
-		fmt.Println("===>>>444444", stepMap, "========>", stepMap["component"].(string))
-
 		if IsCompExist(stepMap["component"].(string)) {
-
-			fmt.Println("===>>>5555555", stepMap["data"].(map[string]interface{}))
 
 			o.Steps[stepMap["id"].(string)] = &Step{
 				Flow: o,
 				Data: stepMap["data"].(map[string]interface{}),
 			}
-		} else {
-			fmt.Println("===>>>66666666", stepItem)
 		}
 	}
 
 	return nil
 }
 
-func (o *Flow) Start(params map[string]interface{}, autoExecute bool) *FlowInstance {
+func (o *Flow) CreateInstance(data map[string]interface{}, execute bool) *FlowInstance {
 
-	ret := &FlowInstance{}
+	mdl := &repo.Instance{
+		FlowId: o.Id,
+		StepId: "start",
+	}
+
+	repo.GetInstanceRepo().Create(mdl)
+
+	ret := &FlowInstance{
+		Id: mdl.Id,
+	}
+
+	if data != nil {
+		ret.SetDataBulk(data)
+	}
+
+	if execute {
+		ret.Execute(nil)
+	}
 
 	return ret
 }
 
-func (o *Flow) GetStep(stepId string) *Step {
+func (o *Flow) getStep(stepId string) *Step {
 
 	ret, ok := o.Steps[stepId]
 
 	if !ok {
 
+		return nil
 	}
 
 	return ret
@@ -93,15 +105,38 @@ func (o *Flow) GetStep(stepId string) *Step {
 
 func (o *Flow) Execute(instance *FlowInstance) error {
 
-	prevStepId := instance.GetStepId()
-
-	step := o.GetStep(prevStepId)
+	step := o.getStep(instance.GetStepId())
 
 	if step == nil {
 		return errors.New("step not found :" + instance.GetStepId())
 	}
 
-	next, err := step.Execute(instance)
+	err := step.Execute(instance)
+
+	if err != nil {
+
+		return err
+	}
+
+	if step.IsAutoNext() {
+
+		instance.Next(nil)
+	}
+
+	return nil
+}
+
+func (o *Flow) Next(instance *FlowInstance) error {
+
+	prevStepId := instance.GetStepId()
+
+	step := o.getStep(prevStepId)
+
+	if step == nil {
+		return errors.New("step not found :" + instance.GetStepId())
+	}
+
+	next, err := step.Next(instance)
 
 	if err != nil {
 
@@ -113,28 +148,58 @@ func (o *Flow) Execute(instance *FlowInstance) error {
 		instance.SetStepId(next)
 	}
 
+	instance.Execute(nil)
+
 	return nil
+}
+
+func (o *Flow) ListInstance(step string) []dto.Instance {
+
+	repo.GetInstanceRepo().Search()
 }
 
 // -------------------------
 
 var flowMap map[string]*Flow = map[string]*Flow{}
 
-func GetFlow(flowId string) (*Flow, error) {
+func ListFlow(filter string, pageNo, pageSize int) ([]dto.Flow, int64) {
 
-	ret, ok := flowMap[flowId]
+	ret := []dto.Flow{}
+
+	listMdl, total := repo.GetFlowRepo().Search(filter, pageNo, pageSize)
+
+	for _, mdl := range listMdl {
+
+		newDto := dto.Flow{}
+
+		copier.Copy(&newDto, mdl)
+		ret = append(ret, newDto)
+	}
+
+	return ret, total
+}
+
+func GetFlow(idOrCode string) (*Flow, error) {
+
+	ret, ok := flowMap[idOrCode]
 
 	if !ok {
 
-		mdl := repo.GetFlowRepo().GetById(flowId)
+		mdl := repo.GetFlowRepo().GetById(idOrCode)
 
 		if mdl == nil {
 
-			return nil, errors.New("flow not found : " + flowId)
+			mdl = repo.GetFlowRepo().GetByCode(idOrCode)
+
+			if mdl == nil {
+
+				return nil, errors.New("flow not found : " + idOrCode)
+			}
 		}
 
 		ret = &Flow{
-			Id: flowId,
+			Id:   mdl.Id,
+			Code: mdl.Code,
 		}
 
 		err := ret.Init(mdl)
@@ -143,7 +208,8 @@ func GetFlow(flowId string) (*Flow, error) {
 			return nil, err
 		}
 
-		flowMap[flowId] = ret
+		flowMap[mdl.Id] = ret
+		flowMap[mdl.Code] = ret
 	}
 
 	return ret, nil

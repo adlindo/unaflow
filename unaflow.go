@@ -7,16 +7,14 @@ import (
 	_ "github.com/adlindo/unaflow/components"
 )
 
-func ListFlow() []dto.Flow {
+func ListFlow(filter string, pageNo, pageSize int) ([]dto.Flow, int64) {
 
-	ret := []dto.Flow{}
-
-	return ret
+	return engine.ListFlow(filter, pageNo, pageSize)
 }
 
-func GetFlow(flowId string) (*engine.Flow, error) {
+func GetFlow(idOrCode string) (*engine.Flow, error) {
 
-	return engine.GetFlow(flowId)
+	return engine.GetFlow(idOrCode)
 }
 
 func GetInstace(instanceId string) *engine.FlowInstance {

@@ -3,8 +3,9 @@ package engine
 import "fmt"
 
 type Component interface {
-	IsAutoExecute() bool
-	Execute() (string, error)
+	IsAutoNext() bool
+	Execute(data map[string]interface{}, flow *Flow, instance *FlowInstance) error
+	Next(data map[string]interface{}, flow *Flow, instance *FlowInstance) (string, error)
 }
 
 var compMap map[string]Component = map[string]Component{}

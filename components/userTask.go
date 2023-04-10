@@ -1,13 +1,9 @@
 package components
 
 type UserTask struct {
+	BaseComponent
 }
 
-func (o *UserTask) IsAutoExecute() bool {
+func (o *UserTask) IsAutoNext() bool {
 	return false
-}
-
-func (o *UserTask) Execute() (string, error) {
-
-	return "", nil
 }
