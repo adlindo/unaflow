@@ -1,6 +1,8 @@
 package unaflow
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,21 +57,30 @@ func GetUnaFlowCtrl(basePath ...string) *UnaFlowCtrl {
 func (o *UnaFlowCtrl) Init() {
 
 	gocom.GET(o.basePath+"/test", o.test)
+	gocom.GET(o.basePath+"/clear", o.clear)
 
 	gocom.POST(o.basePath+"/flow/:idOrCode/new", o.createInstance)
 	gocom.GET(o.basePath+"/flow/:idOrCode/instance", o.listInstance)
 	gocom.GET(o.basePath+"/flow", o.listFlow)
 
-	gocom.GET(o.basePath+"/instance/:id/data", o.listFlow)
-	gocom.POST(o.basePath+"/instance/:id/data", o.listFlow)
-	gocom.POST(o.basePath+"/instance/:id/next", o.listFlow)
+	gocom.GET(o.basePath+"/instance/:id/data", o.getInstaceData)
+	gocom.POST(o.basePath+"/instance/:id/data", o.setInstaceData)
+	gocom.POST(o.basePath+"/instance/:id/execute", o.instanceExecute)
+	gocom.POST(o.basePath+"/instance/:id/next", o.instanceNext)
+	gocom.POST(o.basePath+"/instance/:id/stop", o.instanceStop)
 
-	gocom.GET(o.basePath+"/instance/:id", o.listFlow)
+	gocom.GET(o.basePath+"/instance/:id", o.getInstance)
 }
 
 func (o *UnaFlowCtrl) test(ctx gocom.Context) error {
 
 	return ctx.SendString("OK " + time.Now().Format("2006-01-02 15:04:05"))
+}
+
+func (o *UnaFlowCtrl) clear(ctx gocom.Context) error {
+
+	engine.ClearFlow()
+	return ctx.SendResult(true)
 }
 
 func (o *UnaFlowCtrl) listFlow(ctx gocom.Context) error {
@@ -79,7 +90,24 @@ func (o *UnaFlowCtrl) listFlow(ctx gocom.Context) error {
 
 	ret, total := engine.ListFlow(ctx.Query("filter"), pageNo, pageSize)
 
-	return ctx.SendPaged(ret, pageNo, int(total))
+	return ctx.SendPaged(ret, pageNo, totalPage(int(total), pageSize))
+}
+
+func (o *UnaFlowCtrl) normalizeParam(param map[string]interface{}) map[string]interface{} {
+
+	for name, val := range param {
+		switch val.(type) {
+		case float64:
+			if val == math.Trunc(val.(float64)) {
+				fmt.Println()
+				param[name] = int64(val.(float64))
+			}
+		case map[string]interface{}:
+			param[name] = o.normalizeParam(val.(map[string]interface{}))
+		}
+	}
+
+	return param
 }
 
 func (o *UnaFlowCtrl) createInstance(ctx gocom.Context) error {
@@ -88,28 +116,189 @@ func (o *UnaFlowCtrl) createInstance(ctx gocom.Context) error {
 	err := ctx.Bind(&data)
 
 	if err != nil {
-		ctx.SendError(gocom.NewError(1001, err.Error()))
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
 	}
+
+	data.Params = o.normalizeParam(data.Params)
 
 	flow, err := GetFlow(ctx.Param("idOrCode"))
 
 	if err != nil {
-		ctx.SendError(gocom.NewError(1002, err.Error()))
+		return ctx.SendError(gocom.NewError(1002, err.Error()))
 	}
 
-	instance := flow.CreateInstance(data.Params, data.Execute)
+	instance, err := flow.CreateInstance(data.Key, data.Params, data.Execute)
 
-	ret := dto.FlowInstance{}
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	ret := dto.Instance{}
+	ret.Data = instance.ListData()
 	copier.Copy(&ret, instance)
 
 	return ctx.SendResult(ret)
 }
 
+func totalPage(total, pageSize int) int {
+
+	if pageSize < 1 {
+		return 1
+	}
+
+	rem := total % pageSize
+
+	if rem > 0 {
+		return (total / pageSize) + 1
+	}
+
+	return total / pageSize
+}
+
 func (o *UnaFlowCtrl) listInstance(ctx gocom.Context) error {
 
-	ret := ""
+	flow, err := engine.GetFlow(ctx.Param("idOrCode"))
 
-	step := ctx.Query("step")
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	pageNo, _ := strconv.Atoi(ctx.Query("pageNo", "0"))
+	pageSize, _ := strconv.Atoi(ctx.Query("pageSize", "10"))
+
+	ret, total := flow.ListInstance(ctx.Query("step"), ctx.Query("filter"), pageNo, pageSize)
+
+	return ctx.SendPaged(ret, pageNo, totalPage(total, pageSize))
+}
+
+//--------------------------------------------------------
+
+func (o *UnaFlowCtrl) instanceNext(ctx gocom.Context) error {
+
+	data := dto.NextReq{}
+	err := ctx.Bind(&data)
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
+	}
+
+	data.Params = o.normalizeParam(data.Params)
+
+	instance, err := engine.GetInstace(ctx.Param("id"))
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	err = instance.Next(data.Params)
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
+	}
+
+	ret := dto.Instance{}
+	copier.Copy(&ret, instance)
+	ret.Data = instance.ListData()
 
 	return ctx.SendResult(ret)
+}
+
+func (o *UnaFlowCtrl) instanceExecute(ctx gocom.Context) error {
+
+	data := dto.NextReq{}
+	err := ctx.Bind(&data)
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
+	}
+
+	data.Params = o.normalizeParam(data.Params)
+
+	instance, err := engine.GetInstace(ctx.Param("id"))
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	err = instance.Execute(data.Params)
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
+	}
+
+	ret := dto.Instance{}
+	copier.Copy(&ret, instance)
+	ret.Data = instance.ListData()
+
+	return ctx.SendResult(ret)
+}
+
+func (o *UnaFlowCtrl) getInstance(ctx gocom.Context) error {
+
+	instance, err := engine.GetInstace(ctx.Param("id"))
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	ret := dto.Instance{}
+	copier.Copy(&ret, instance)
+	ret.Data = instance.ListData()
+
+	return ctx.SendResult(ret)
+}
+
+func (o *UnaFlowCtrl) getInstaceData(ctx gocom.Context) error {
+
+	instance, err := engine.GetInstace(ctx.Param("id"))
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	ret := instance.ListData()
+
+	return ctx.SendResult(ret)
+}
+
+func (o *UnaFlowCtrl) setInstaceData(ctx gocom.Context) error {
+
+	data := dto.NextReq{}
+	err := ctx.Bind(&data)
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
+	}
+
+	data.Params = o.normalizeParam(data.Params)
+
+	instance, err := engine.GetInstace(ctx.Param("id"))
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	instance.SetDataBulk(data.Params)
+
+	return ctx.SendResult(true)
+}
+
+func (o *UnaFlowCtrl) instanceStop(ctx gocom.Context) error {
+
+	data := dto.StopReq{}
+	err := ctx.Bind(&data)
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1001, err.Error()))
+	}
+
+	instance, err := engine.GetInstace(ctx.Param("id"))
+
+	if err != nil {
+		return ctx.SendError(gocom.NewError(1003, err.Error()))
+	}
+
+	instance.Stop(data.Reason)
+
+	return ctx.SendResult(true)
 }

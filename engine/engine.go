@@ -1,7 +1,5 @@
 package engine
 
-import "fmt"
-
 type Component interface {
 	IsAutoNext() bool
 	Execute(data map[string]interface{}, flow *Flow, instance *FlowInstance) error
@@ -12,7 +10,6 @@ var compMap map[string]Component = map[string]Component{}
 
 func RegComponent(code string, comp Component) {
 
-	fmt.Println("register ===>>>", code)
 	compMap[code] = comp
 }
 

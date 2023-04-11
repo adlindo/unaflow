@@ -17,7 +17,7 @@ func GetFlow(idOrCode string) (*engine.Flow, error) {
 	return engine.GetFlow(idOrCode)
 }
 
-func GetInstace(instanceId string) *engine.FlowInstance {
+func GetInstace(instanceId string) (*engine.FlowInstance, error) {
 
 	return engine.GetInstace(instanceId)
 }

@@ -72,7 +72,7 @@ func init() {
 	engine.RegComponent("split", &Split{})
 	engine.RegComponent("join", &Join{})
 	engine.RegComponent("condition", &Condition{})
-	engine.RegComponent("multiCondition", &MultiCondition{})
+	engine.RegComponent("switch", &Switch{})
 	engine.RegComponent("callHTTP", &CallHTTP{})
 	engine.RegComponent("sendEmail", &SendEmail{})
 	engine.RegComponent("setValue", &SetValue{})

@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/adlindo/gocom"
@@ -94,8 +95,8 @@ func (o *FlowRepo) Search(filter string, pageNo, pageLength int) ([]*Flow, int64
 
 	if filter != "" {
 
-		filter = "%" + filter + "%"
-		tx = tx.Where("name like ? or code like ?", filter)
+		filter = "%" + strings.ToUpper(filter) + "%"
+		tx = tx.Where("upper(name) like ? or upper(code) like ?", filter, filter)
 	}
 
 	if pageLength > 0 {
@@ -105,7 +106,7 @@ func (o *FlowRepo) Search(filter string, pageNo, pageLength int) ([]*Flow, int64
 	var total int64 = 0
 
 	tx.Count(&total)
-	tx.Find(ret)
+	tx.Find(&ret)
 
 	return ret, total
 }

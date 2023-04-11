@@ -10,9 +10,11 @@ import (
 )
 
 type Flow struct {
-	Id    string
-	Code  string
-	Steps map[string]*Step
+	Id     string
+	Name   string
+	Code   string
+	Active bool
+	Steps  map[string]*Step
 }
 
 /*
@@ -58,8 +60,11 @@ func (o *Flow) Init(mdl *repo.Flow) error {
 		if IsCompExist(stepMap["component"].(string)) {
 
 			o.Steps[stepMap["id"].(string)] = &Step{
-				Flow: o,
-				Data: stepMap["data"].(map[string]interface{}),
+				Flow:      o,
+				Id:        stepMap["id"].(string),
+				Name:      stepMap["name"].(string),
+				Component: stepMap["component"].(string),
+				Data:      stepMap["data"].(map[string]interface{}),
 			}
 		}
 	}
@@ -67,17 +72,28 @@ func (o *Flow) Init(mdl *repo.Flow) error {
 	return nil
 }
 
-func (o *Flow) CreateInstance(data map[string]interface{}, execute bool) *FlowInstance {
+func (o *Flow) CreateInstance(key string, data map[string]interface{}, execute bool) (*FlowInstance, error) {
+
+	if !o.Active {
+
+		return nil, errors.New("Flow is not active")
+	}
 
 	mdl := &repo.Instance{
 		FlowId: o.Id,
+		Key:    key,
 		StepId: "start",
+		Status: 0,
 	}
 
 	repo.GetInstanceRepo().Create(mdl)
 
 	ret := &FlowInstance{
-		Id: mdl.Id,
+		Id:       mdl.Id,
+		FlowId:   o.Id,
+		FlowName: o.Name,
+		StepId:   "start",
+		Status:   0,
 	}
 
 	if data != nil {
@@ -85,10 +101,20 @@ func (o *Flow) CreateInstance(data map[string]interface{}, execute bool) *FlowIn
 	}
 
 	if execute {
+		ret.SetStatus(1)
 		ret.Execute(nil)
+	} else {
+
+		step := o.getStep("start")
+
+		if step != nil {
+
+			ret.Component = step.Component
+			ret.StepName = step.Name
+		}
 	}
 
-	return ret
+	return ret, nil
 }
 
 func (o *Flow) getStep(stepId string) *Step {
@@ -111,6 +137,12 @@ func (o *Flow) Execute(instance *FlowInstance) error {
 		return errors.New("step not found :" + instance.GetStepId())
 	}
 
+	instance.FlowId = o.Id
+	instance.FlowName = o.Name
+	instance.StepId = step.Id
+	instance.StepName = step.Name
+	instance.Component = step.Component
+
 	err := step.Execute(instance)
 
 	if err != nil {
@@ -118,7 +150,10 @@ func (o *Flow) Execute(instance *FlowInstance) error {
 		return err
 	}
 
-	if step.IsAutoNext() {
+	if step.Component == "end" {
+
+		instance.End()
+	} else if step.IsAutoNext() {
 
 		instance.Next(nil)
 	}
@@ -146,21 +181,44 @@ func (o *Flow) Next(instance *FlowInstance) error {
 	if next != prevStepId {
 
 		instance.SetStepId(next)
+		instance.Execute(nil)
 	}
-
-	instance.Execute(nil)
 
 	return nil
 }
 
-func (o *Flow) ListInstance(step string) []dto.Instance {
+func (o *Flow) ListInstance(step, filter string, pageNo, pageSize int) ([]dto.Instance, int) {
 
-	repo.GetInstanceRepo().Search()
+	ret := []dto.Instance{}
+	list, total := repo.GetInstanceRepo().Search(o.Id, step, filter, pageNo, pageSize)
+
+	for _, item := range list {
+
+		newDto := dto.Instance{}
+		copier.Copy(&newDto, item)
+
+		newDto.FlowName = o.Name
+
+		step := o.getStep(newDto.StepId)
+
+		if step != nil {
+			newDto.StepName = step.Name
+			newDto.Component = step.Component
+		}
+
+		ret = append(ret, newDto)
+	}
+
+	return ret, int(total)
 }
 
 // -------------------------
 
 var flowMap map[string]*Flow = map[string]*Flow{}
+
+func ClearFlow() {
+	flowMap = map[string]*Flow{}
+}
 
 func ListFlow(filter string, pageNo, pageSize int) ([]dto.Flow, int64) {
 
@@ -198,8 +256,10 @@ func GetFlow(idOrCode string) (*Flow, error) {
 		}
 
 		ret = &Flow{
-			Id:   mdl.Id,
-			Code: mdl.Code,
+			Id:     mdl.Id,
+			Name:   mdl.Name,
+			Code:   mdl.Code,
+			Active: mdl.IsActive,
 		}
 
 		err := ret.Init(mdl)

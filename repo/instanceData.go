@@ -53,6 +53,8 @@ func (o *InstanceDataRepo) SetData(instanceId, name string, value interface{}) e
 
 	switch value.(type) {
 	case int:
+	case int32:
+	case int64:
 		dataType = "int"
 		dataValue = fmt.Sprintf("%d", value)
 	case float32:
@@ -101,7 +103,7 @@ func (o *InstanceDataRepo) ParseData(dataType, dataValue string) interface{} {
 
 	switch dataType {
 	case "int":
-		val, err := strconv.Atoi(dataValue)
+		val, err := strconv.ParseInt(dataValue, 10, 64)
 		if err != nil {
 			return 0
 		}
@@ -154,7 +156,7 @@ func (o *InstanceDataRepo) ListData(instanceId string) map[string]interface{} {
 
 	if o.Model(InstanceData{}).
 		Where("instance_id = ?", instanceId).
-		Find(retMdl).Error != nil {
+		Find(&retMdl).Error == nil {
 
 		for _, item := range retMdl {
 

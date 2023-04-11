@@ -1,7 +1,9 @@
 package repo
 
 import (
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/adlindo/gocom"
 	"github.com/adlindo/gocom/config"
@@ -11,9 +13,12 @@ import (
 
 type Instance struct {
 	gorm.Model
-	Id     string
-	FlowId string
-	StepId string
+	Id         string
+	FlowId     string
+	Key        string
+	StepId     string
+	Status     int
+	StopReason string
 }
 
 func (o *Instance) BeforeCreate(db *gorm.DB) error {
@@ -77,16 +82,31 @@ func (o *InstanceRepo) GetById(instanceId string) *Instance {
 	return ret
 }
 
-func (o *InstanceRepo) SetStepId(instanceId, stepIs string) {
+func (o *InstanceRepo) SetStepStatus(instanceId, stepId string, status int) {
 
-	o.Exec("update ")
+	o.Exec("update unaflow_instances set updated_at = ?, step_id = ?, status = ? where id = ?", time.Now(), stepId, status, instanceId)
 }
 
-func (o *InstanceRepo) Search(flowId, stepId string, pageNo, pageLength int) ([]*Instance, int64) {
+func (o *InstanceRepo) SetStepId(instanceId, stepId string) {
+
+	o.Exec("update unaflow_instances set updated_at = ?, step_id = ? where id = ?", time.Now(), stepId, instanceId)
+}
+
+func (o *InstanceRepo) SetStatus(instanceId string, status int) {
+
+	o.Exec("update unaflow_instances set updated_at = ?, status = ? where id = ?", time.Now(), status, instanceId)
+}
+
+func (o *InstanceRepo) SetStatusReason(instanceId string, status int, reason string) {
+
+	o.Exec("update unaflow_instances set updated_at = ?, status = ?, stop_reason = ? where id = ?", time.Now(), status, reason, instanceId)
+}
+
+func (o *InstanceRepo) Search(flowId, stepId, filter string, pageNo, pageLength int) ([]*Instance, int64) {
 
 	ret := []*Instance{}
 
-	tx := o.Model(Instance{})
+	tx := o.Model(Instance{}).Debug()
 
 	if flowId != "" {
 
@@ -95,7 +115,12 @@ func (o *InstanceRepo) Search(flowId, stepId string, pageNo, pageLength int) ([]
 
 	if stepId != "" {
 
-		tx = tx.Where("step_id = ?", flowId)
+		tx = tx.Where("step_id = ?", stepId)
+	}
+
+	if filter != "" {
+
+		tx = tx.Where("upper(key) like ?", "%"+strings.ToUpper(filter)+"%")
 	}
 
 	if pageLength > 0 {
@@ -105,7 +130,7 @@ func (o *InstanceRepo) Search(flowId, stepId string, pageNo, pageLength int) ([]
 	var total int64 = 0
 
 	tx.Count(&total)
-	tx.Find(ret)
+	tx.Find(&ret)
 
 	return ret, total
 }
